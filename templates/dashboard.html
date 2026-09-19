@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InovaApps 2026 - Fila de Atendimento</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="dashboard-body">
+    <div class="glass-container dashboard-wrapper">
+        <header class="dashboard-header">
+            <div>
+                <h1>Fila de Atendimento Priorizada</h1>
+                <p>Clientes ativos classificados por risco e impacto financeiro.</p>
+            </div>
+            <a href="/" class="btn-secondary">Carregar Nova Base</a>
+        </header>
+
+        <section class="dashboard-content">
+            <!-- Estatísticas do MVP -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Total de Clientes Ativos Analisados</h3>
+                    <div class="stat-value">{{ total_ativos }}</div>
+                </div>
+                <div class="stat-card risk-high">
+                    <h3>Clientes com Fila Prioritária (Risco Alto)</h3>
+                    <div class="stat-value">{{ risco_alto }}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Princípio Aplicado</h3>
+                    <div class="stat-value" style="font-size: 1rem; margin-top: 1rem;">Lógica gerada a partir dos 22 cancelamentos conhecidos.</div>
+                </div>
+            </div>
+
+            <!-- Fila de Atendimento (Prioridade 3 do Hackathon) -->
+            <div class="table-container card">
+                <h2>Ações de Retenção Recomendadas (Evidências)</h2>
+                <p>Abaixo estão as "Evidências" de deterioração que explicam a posição na fila (Prioridade 4 e 6).</p>
+                <table class="risk-table">
+                    <thead>
+                        <tr>
+                            <th>Fila</th>
+                            <th>Cliente</th>
+                            <th>Risco Base</th>
+                            <th>Valor Mensal (Exposição)</th>
+                            <th>Evidências Identificadas</th>
+                            <th>Orientação (Ação Sugerida)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if fila %}
+                            {% for f in fila %}
+                            <tr>
+                                <td><span class="badge badge-warning">#{{ loop.index }}</span></td>
+                                <td><strong>{{ f.cliente_id }}</strong><br><small>{{ f.segmento }} - {{ f.plano }}</small></td>
+                                <td>{{ f.score_risco }} / 100</td>
+                                <td><span style="color:#10b981; font-weight:600;">R$ {{ f.valor_mensal }}</span></td>
+                                <td><small>{{ f.evidencias }}</small></td>
+                                <td><button class="btn-action wpp-btn" style="font-size: 0.8rem;">{{ f.acao_recomendada }}</button></td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" style="text-align: center;">Nenhum dado analisado ainda. Volte e processe a base.</td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+</body>
+</html>

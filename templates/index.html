@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InovaApps 2026 - Motor de Lógica</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="glass-container main-wrapper">
+        <header>
+            <h1>InovaApps 2026</h1>
+            <p>MVP: Identificação de Risco de Cancelamento (Data Science)</p>
+        </header>
+
+        <section class="onboarding-section">
+            <div class="card">
+                <h2>1. Conectar e Analisar Base de Dados</h2>
+                <p>O algoritmo irá se conectar ao SQL Server configurado, extrair o histórico dos clientes e priorizar a fila de ativos.</p>
+                <form id="analyzeDbForm" action="/analyze_db" method="post">
+                    <button type="submit" class="btn-primary" style="margin-top: 1rem;">Conectar e Executar Motor de Lógica</button>
+                </form>
+                <div id="uploadStatus" class="status-msg"></div>
+            </div>
+            
+            <div id="actionsPanel" style="text-align: center; margin-top: 2rem; display: {{ 'block' if has_data else 'none' }};">
+                <a href="/fila" class="btn-secondary ai-btn" style="color:white; padding: 1rem 2rem; font-size: 1.1rem;">Ver a Fila de Atendimento -></a>
+            </div>
+        </section>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
