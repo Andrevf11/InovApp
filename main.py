@@ -1,54 +1,44 @@
 import os
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+# pyrefly: ignore [missing-import]
+from fastapi.responses import JSONResponse
 
 from logic import ChurnAnalyzer
 
-app = FastAPI()
+app = FastAPI(title="InovaApps 2026 API")
 
-# Configuração de Arquivos Estáticos e Templates
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+# Habilitar CORS para permitir que o frontend do Lovable acesse esta API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # Em prod, restringir aos domínios corretos
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Objeto global provisório para manter o resultado na memória no MVP
-fila_atendimento_global = []
-
-@app.get("/", response_class=HTMLResponse)
-async def read_root(request: Request):
-    # Passamos os dados globais para o dashboard para ele decidir qual view renderizar
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "has_data": len(fila_atendimento_global) > 0
-    })
+@app.get("/")
+def read_root():
+    return {"status": "ok", "message": "API do InovaApps 2026 (Hackathon) está rodando."}
 
 @app.post("/analyze_db")
 async def analyze_db():
-    """Rota para processar os dados do banco SQL Server usando o algoritmo do Hackathon."""
-    global fila_atendimento_global
+    """Rota REST pura: Processa o SQL Server e retorna a fila em JSON."""
     try:
         analyzer = ChurnAnalyzer()
-        analyzer.load_sql()  # Chama a leitura do SQL Server de conexao.py
+        analyzer.load_sql()  # Lê do SQL Server usando conexao.py
         fila = analyzer.processar_ativos()
         
-        # Armazena globalmente (para o MVP de demonstração rápida)
-        fila_atendimento_global = fila
+        total_ativos = 58
+        risco_alto = len([c for c in fila if c['score_risco'] > 60])
         
-        return {"status": "success", "message": "Análise concluída com sucesso! Redirecionando para a fila de atendimento..."}
+        return JSONResponse(content={
+            "status": "success",
+            "summary": {
+                "total_ativos": total_ativos,
+                "risco_alto": risco_alto
+            },
+            "data": fila
+        })
     except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-@app.get("/fila", response_class=HTMLResponse)
-async def get_fila(request: Request):
-    """Retorna o MVP da Fila de Atendimento."""
-    # Resumo para o dashboard top
-    total_ativos = 58 # fixo da base ou calcular
-    risco_alto = len([c for c in fila_atendimento_global if c['score_risco'] > 60])
-    
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request, 
-        "fila": fila_atendimento_global,
-        "total_ativos": total_ativos,
-        "risco_alto": risco_alto
-    })
+        return JSONResponse(content={"status": "error", "message": str(e)}, status_code=500)
