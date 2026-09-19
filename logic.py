@@ -1,5 +1,11 @@
+import os
 import pandas as pd
 import numpy as np
+import google.generativeai as genai
+from dotenv import load_dotenv
+
+load_dotenv()
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
 class ChurnAnalyzer:
     def __init__(self):
@@ -9,22 +15,25 @@ class ChurnAnalyzer:
         self.situacao = None
         self.resultados = []
 
-    def load_sql(self):
-        """Carrega os dados a partir do banco SQL Server configurado em conexao.py."""
-        print("Carregando dados do banco SQL Server...")
-        from conexao import conexao
-        self.clientes = pd.read_sql_query("SELECT * FROM clientes", conexao)
-        self.atendimentos = pd.read_sql_query("SELECT * FROM atendimento_mensal", conexao)
-        self.nps = pd.read_sql_query("SELECT * FROM pesquisas_nps", conexao)
-        self.situacao = pd.read_sql_query("SELECT * FROM situacao_clientes", conexao)
+    def load_data(self):
+        """Carrega os dados a partir do arquivo Excel (base_hackathon.xlsx)."""
+        print("Carregando dados da planilha Excel...")
         
-        # Converte datas (SQL Server pode retornar string ou date)
-        self.atendimentos['mes_ref'] = pd.to_datetime(self.atendimentos['mes_ref'], format='%Y-%m')
-        self.nps['mes_ref'] = pd.to_datetime(self.nps['mes_ref'], format='%Y-%m')
+        arquivo_excel = 'base_hackathon.xlsx'
+        
+        self.clientes = pd.read_excel(arquivo_excel, sheet_name='clientes')
+        self.atendimentos = pd.read_excel(arquivo_excel, sheet_name='atendimento_mensal')
+        self.nps = pd.read_excel(arquivo_excel, sheet_name='pesquisas_nps')
+        self.situacao = pd.read_excel(arquivo_excel, sheet_name='situacao_clientes')
+        
+        # Converte datas
+        self.atendimentos['mes_ref'] = pd.to_datetime(self.atendimentos['mes_ref'])
+        self.nps['mes_ref'] = pd.to_datetime(self.nps['mes_ref'])
 
     def analyze_client(self, df_client_hist, df_nps_hist, cliente_info):
         """
-        Analisa o histórico de 1 cliente para identificar sinais de deterioração (Risco Comportamental).
+        Analisa o histórico de 1 cliente para identificar sinais de deterioração (Risco Comportamental)
+        e o padrão de 'Silêncio Qualificado'.
         """
         if df_client_hist.empty:
             return 0, []
@@ -34,10 +43,11 @@ class ChurnAnalyzer:
         # Considerar os últimos 3-6 meses para análise de tendência (para evitar falsos positivos de variações pontuais)
         recent_hist = df_client_hist.tail(6)
         if len(recent_hist) < 2:
-            return 0, []
+            return 0, [], False
 
         evidencias = []
         score_risco = 0
+        silencio_qualificado = False
 
         # 1. Uso da Plataforma (Queda sustentada)
         if 'uso_plataforma_pct' in recent_hist.columns:
@@ -80,20 +90,30 @@ class ChurnAnalyzer:
                 score_risco += 10
                 evidencias.append("Falta de engajamento em reuniões agendadas")
 
-        # 6. NPS (Satisfação e ausência de resposta)
+        # 6. NPS (Satisfação e ausência de resposta / Silêncio Qualificado)
         if not df_nps_hist.empty:
             df_nps_hist = df_nps_hist.sort_values('mes_ref')
             nps_recente = df_nps_hist.iloc[-1]
+            
             if nps_recente['respondeu'] == 0:
                 score_risco += 10
                 evidencias.append("Cliente parou de responder a pesquisa NPS")
+                
+                # Checar se no passado houve nota negativa formal (Silêncio Qualificado)
+                if len(df_nps_hist) > 1:
+                    past_nps = df_nps_hist.iloc[:-1]
+                    if past_nps[past_nps['classificacao_nps'].isin(['Detrator', 'Neutro'])].shape[0] > 0:
+                        score_risco += 20
+                        evidencias.append("[ALERTA] Silêncio Qualificado: Parou de responder após dar avaliações negativas/neutras")
+                        silencio_qualificado = True
+                        
             elif nps_recente['classificacao_nps'] == 'Detrator':
                 score_risco += 15
                 evidencias.append(f"NPS Detrator (Nota: {nps_recente['nota_nps']})")
                 
         # Normalizando score (máx 100 approx)
         score_risco = min(score_risco, 100)
-        return score_risco, evidencias
+        return score_risco, evidencias, silencio_qualificado
 
     def processar_ativos(self):
         """Processa apenas clientes ativos para gerar a fila de atendimento."""
@@ -108,26 +128,41 @@ class ChurnAnalyzer:
             df_nps = self.nps[self.nps['cliente_id'] == client_id]
             client_info = self.clientes[self.clientes['cliente_id'] == client_id].iloc[0]
 
-            score_risco, evidencias = self.analyze_client(df_hist, df_nps, client_info)
+            score_risco, evidencias, silencio_qualificado = self.analyze_client(df_hist, df_nps, client_info)
             
             valor_mensal = client_info['valor_mensal']
+            porte = client_info.get('porte', 'Desconhecido')
+            plano = client_info.get('plano', '')
             
-            # Prioridade Operacional = Score * (Log(Valor Mensal) / Constante) -> Ponderação simples
-            # O Hackathon diz: "Impacto financeiro: Levar o valor mensal do contrato para a priorização"
-            # Multiplicamos o risco base pelo peso do valor do contrato para achar a 'Urgência'
-            impacto_financeiro = (valor_mensal / 1000) # Normalizando para milhares de reais
+            is_grande = porte == 'Grande'
+            is_vip = plano in ['Avançado', 'Avancado', 'Enterprise']
+            is_pequeno = porte == 'Pequeno'
+
+            # Prioridade Operacional Base
+            impacto_financeiro = (valor_mensal / 1000)
             urgencia_fila = score_risco * (1 + (impacto_financeiro * 0.05))
+            
+            # MATRIZ HÍBRIDA DE PRIORIZAÇÃO (Porte x Valor)
+            if is_grande or is_vip:
+                urgencia_fila *= 1.5  # Bônus de urgência para contas grandes/vip
+            elif is_pequeno and not is_vip:
+                urgencia_fila *= 0.8  # Redução de prioridade para contas pequenas em planos básicos
 
             if score_risco > 0:
-                acao = self.sugerir_acao(score_risco, evidencias)
+                acao = self.sugerir_acao(score_risco, evidencias, silencio_qualificado, is_grande or is_vip)
+                segmento = client_info.get('segmento', '')
+                palavras_chave = self.extrair_palavras_chave_ia(client_id, segmento, porte, plano, is_grande or is_vip)
+                
                 resultados_ativos.append({
                     'cliente_id': client_id,
-                    'segmento': client_info['segmento'],
-                    'plano': client_info['plano'],
+                    'porte': porte,
+                    'segmento': client_info.get('segmento', ''),
+                    'plano': plano,
                     'valor_mensal': valor_mensal,
                     'score_risco': score_risco,
                     'urgencia_fila': round(urgencia_fila, 2),
                     'evidencias': " | ".join(evidencias),
+                    'palavras_chave': palavras_chave,
                     'acao_recomendada': acao
                 })
 
@@ -135,25 +170,64 @@ class ChurnAnalyzer:
         self.resultados = sorted(resultados_ativos, key=lambda x: x['urgencia_fila'], reverse=True)
         return self.resultados
 
-    def sugerir_acao(self, score, evidencias):
+    def sugerir_acao(self, score, evidencias, silencio_qualificado, is_vip):
         """Gera uma sugestão de ação baseada nas evidências e no nível do problema."""
         ev_str = " ".join(evidencias).lower()
-        if score > 80:
-            return "ALERTA VERMELHO: Ligar imediatamente para renegociação e plano de ação técnico"
-        if "atraso financeiro" in ev_str:
-            return "Revisar situação financeira e oferecer flexibilização (desconto pontual)"
-        if "chamados críticos" in ev_str or "sla" in ev_str:
-            return "Agendar reunião técnica de revisão (Customer Success + TI)"
-        if "nps" in ev_str or "uso" in ev_str:
-            return "Contato do CS para plano de engajamento na plataforma"
+        acao_base = ""
         
-        return "Acompanhar de perto"
+        if silencio_qualificado:
+            acao_base = "Enviar WhatsApp Semanal (Ação Proativa Anti-Silêncio) e investigar reclamações."
+        elif score > 80:
+            acao_base = "ALERTA VERMELHO: Ligar imediatamente para renegociação e plano de ação técnico"
+        elif "atraso financeiro" in ev_str:
+            acao_base = "Revisar situação financeira e oferecer flexibilização (desconto pontual)"
+        elif "chamados críticos" in ev_str or "sla" in ev_str:
+            acao_base = "Agendar reunião técnica de revisão (Customer Success + TI)"
+        elif "nps" in ev_str or "uso" in ev_str:
+            acao_base = "Contato do CS para plano de engajamento na plataforma"
+        else:
+            acao_base = "Acompanhar de perto"
+            
+        if is_vip:
+            return f"[VIP Humanizado] {acao_base}"
+        return acao_base
+        
+    def extrair_palavras_chave_ia(self, client_id, segmento, porte, plano, is_vip):
+        """
+        Módulo NLP Real usando Google Gemini.
+        Gera palavras-chave que representam problemas típicos daquele segmento e porte,
+        simulando a leitura de formulários do cliente.
+        """
+        if not os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY") == "coloque_sua_chave_aqui":
+            # Fallback caso não haja chave configurada
+            if is_vip:
+                return "Lentidão relatórios, Erro integração API, Suporte demorado"
+            return "Dúvida sistema, Dificuldade login"
+            
+        try:
+            model = genai.GenerativeModel("gemini-1.5-flash")
+            
+            # Construindo o prompt de simulação
+            prompt = (
+                f"Aja como um analista de Customer Success. Eu tenho um cliente B2B do segmento de {segmento}, "
+                f"porte {porte} e que utiliza o plano {plano}. "
+                f"Imagine que este cliente nos enviou feedbacks textuais semanais com reclamações e dores. "
+                f"Gere exatamente 3 palavras-chave (ou pequenas expressões de até 3 palavras cada) que "
+                f"representem os principais problemas relatados por esse perfil de cliente. "
+                f"Retorne apenas as palavras separadas por vírgula. Não adicione nenhum texto extra ou saudação."
+            )
+            
+            response = model.generate_content(prompt)
+            return response.text.strip()
+        except Exception as e:
+            print(f"Erro ao consultar o Gemini: {e}")
+            return "Indisponível no momento"
 
 if __name__ == "__main__":
     # Teste rápido no terminal via SQL Server
     try:
         analyzer = ChurnAnalyzer()
-        analyzer.load_sql()
+        analyzer.load_data()
         fila = analyzer.processar_ativos()
         
         print(f"\n--- FILA DE PRIORIDADE (TOP 5) ---")

@@ -20,12 +20,12 @@ app.add_middleware(
 def read_root():
     return {"status": "ok", "message": "API do InovaApps 2026 (Hackathon) está rodando."}
 
-@app.post("/analyze_db")
-async def analyze_db():
-    """Rota REST pura: Processa o SQL Server e retorna a fila em JSON."""
+@app.post("/analyze_excel")
+async def analyze_excel():
+    """Rota REST pura: Processa o arquivo Excel e retorna a fila em JSON."""
     try:
         analyzer = ChurnAnalyzer()
-        analyzer.load_sql()  # Lê do SQL Server usando conexao.py
+        analyzer.load_data()  # Lê do Excel
         fila = analyzer.processar_ativos()
         
         total_ativos = 58
