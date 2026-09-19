@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from conexao import conexao
 
 class ChurnAnalyzer:
     def __init__(self):
@@ -13,6 +12,7 @@ class ChurnAnalyzer:
     def load_sql(self):
         """Carrega os dados a partir do banco SQL Server configurado em conexao.py."""
         print("Carregando dados do banco SQL Server...")
+        from conexao import conexao
         self.clientes = pd.read_sql_query("SELECT * FROM clientes", conexao)
         self.atendimentos = pd.read_sql_query("SELECT * FROM atendimento_mensal", conexao)
         self.nps = pd.read_sql_query("SELECT * FROM pesquisas_nps", conexao)
