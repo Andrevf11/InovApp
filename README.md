@@ -93,7 +93,115 @@ O servidor estará disponível e a documentação interativa (Swagger) poderá s
 
 ---
 
-## 🚀 Diferenciais para o Hackathon
-- **Zero Banco de Dados Relacional**: Fuga criativa do SQL para manipulação nativa de contexto via LLM.
-- **Integração Real-Time**: IA operando como "tomadora de decisão" no meio do fluxo, e não apenas como um chatbot anexado à aplicação.
-- **Plano Anti-Falha**: A arquitetura prevê instabilidade de chaves (Fallback JSON), garantindo que a apresentação visual aconteça com 100% de fluidez.
+## Documentação técnica
+
+### Fluxo de execução
+
+```text
+Upload Excel
+  |
+  v
+POST /analyze_excel
+  |
+  v
+ChurnAnalyzer.processar_ativos()
+  |
+  +--> leitura das quatro abas com Pandas
+  |       clientes
+  |       atendimento_mensal
+  |       pesquisas_nps
+  |       situacao_clientes
+  |
+  +--> seleção de clientes com situacao == "Ativo"
+  |
+  +--> consolidação dos três últimos registros de atendimento e NPS
+  |
+  +--> análise do Gemini e retorno JSON
+  |       ou
+  +--> fallback local quando a IA falha
+  |
+  v
+Resposta com resumo, score, evidências e ação recomendada
+```
+
+### Responsabilidades dos módulos
+
+| Arquivo | Responsabilidade |
+| --- | --- |
+| `main.py` | Cria a aplicação FastAPI, configura CORS e expõe o endpoint de análise. |
+| `logic.py` | Lê a planilha, consolida o contexto, chama o Gemini e aplica o fallback. |
+| `templates/` | Contém as páginas HTML da interface. |
+| `static/` | Contém os estilos e scripts do frontend. |
+| `requirements.txt` | Declara as dependências Python do projeto. |
+| `inova.sql`, `conexao.py`, `database.py` | Artefatos de persistência e integração disponíveis para futuras evoluções. |
+
+### Contrato de entrada
+
+O endpoint `POST /analyze_excel` recebe `multipart/form-data` com:
+
+| Campo | Tipo | Obrigatório | Descrição |
+| --- | --- | --- | --- |
+| `file` | Excel | Sim | Planilha com as quatro abas esperadas. |
+| `system_name` | Texto | Não | Nome do sistema usado no prompt. |
+| `criteria` | Texto | Não | Critérios adicionais de risco. |
+| `priorities` | Texto | Não | Diretrizes adicionais de priorização. |
+
+As abas esperadas são:
+
+- `clientes`: identificação, porte, plano e valor mensal;
+- `atendimento_mensal`: cliente, SLA, chamados críticos e uso da plataforma;
+- `pesquisas_nps`: cliente, resposta e nota NPS;
+- `situacao_clientes`: cliente e situação atual.
+
+### Contrato de saída
+
+A resposta contém:
+
+- `status`: indica sucesso ou erro;
+- `summary.total_ativos`: quantidade de clientes ativos processados;
+- `summary.risco_alto`: quantidade de clientes com `score_risco > 60`;
+- `data`: lista ordenada de análises de clientes.
+
+Cada item de `data` contém `cliente_id`, `porte`, `plano`, `valor_mensal`, `score_risco`, `urgencia_fila`, `evidencias`, `palavras_chave` e `acao_recomendada`.
+
+### Estratégia de IA e tolerância a falhas
+
+O backend transforma os dados tabulares em contexto textual e envia esse contexto ao modelo `gemini-1.5-flash`. O prompt define:
+
+1. os sinais de risco que devem ser observados;
+2. os critérios e prioridades fornecidos pelo usuário;
+3. o formato JSON obrigatório da resposta;
+4. a ordenação por `urgencia_fila`.
+
+Se a chave estiver ausente, for inválida, houver indisponibilidade do modelo ou o retorno não for um JSON válido, o `ChurnAnalyzer` gera uma análise local de contingência com os dados da própria planilha. Assim, a interface continua recebendo um contrato válido durante uma demonstração ou indisponibilidade temporária do serviço externo.
+
+### Complexidade e custo computacional
+
+Considere:
+
+- `C`: número de clientes ativos;
+- `A`: número de registros de atendimento;
+- `N`: número de registros de NPS.
+
+O carregamento das planilhas é linear em relação ao tamanho dos arquivos. Para cada cliente ativo, o código filtra os DataFrames de atendimento, NPS e cadastro. Na implementação atual, essa etapa tem custo aproximado de `O(C * (A + N + C))`, pois os filtros percorrem os DataFrames para cada cliente.
+
+O custo do fallback é `O(C log C)` por causa da ordenação final. O custo da chamada ao Gemini depende do tamanho do contexto enviado, do tempo de resposta da API e dos limites do provedor.
+
+Para bases maiores, a principal evolução técnica é indexar os DataFrames por `cliente_id` ou pré-agrupar os registros antes do loop, reduzindo o custo dos filtros repetidos.
+
+### Limites atuais
+
+- O resultado depende da qualidade e da estrutura da planilha de entrada.
+- A análise do Gemini não substitui validação humana para decisões comerciais sensíveis.
+- A chave da API deve ser configurada por variável de ambiente e nunca deve ser versionada.
+- O CORS está aberto para facilitar a integração durante o hackathon; em produção, deve ser restringido aos domínios autorizados.
+- Não há autenticação, persistência de resultados ou histórico de análises na versão atual.
+
+### Evolução recomendada
+
+1. Validar o schema da planilha antes do processamento.
+2. Substituir filtros repetidos por agrupamentos indexados.
+3. Registrar prompts, versão do modelo e resultado para auditoria.
+4. Adicionar autenticação e restringir o CORS.
+5. Persistir análises para acompanhar a evolução do risco por cliente.
+6. Criar testes automatizados para o endpoint e para o fallback.
