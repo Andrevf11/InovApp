@@ -19,9 +19,9 @@ import { KpiCards } from "@/components/cs/KpiCards";
 import { QueueTable } from "@/components/cs/QueueTable";
 import { ClientDetailModal } from "@/components/cs/ClientDetailModal";
 import { PulseChecks } from "@/components/cs/PulseChecks";
-import { IdeasChannel } from "@/components/cs/IdeasChannel";
 import { SilencioQualificado } from "@/components/cs/SilencioQualificado";
 import { CrescimentoRelacionamento } from "@/components/cs/CrescimentoRelacionamento";
+import { InitialSetupModal } from "@/components/cs/InitialSetupModal";
 import {
   AtendimentosSection,
   RegistrarAtendimentoModal,
@@ -64,6 +64,8 @@ function Dashboard() {
   const [dados, setDados] = useState<AnaliseCarteira>(baseInicial);
   const [selecionado, setSelecionado] = useState<ClienteAtivo | null>(null);
   const [aberto, setAberto] = useState(false);
+  const [showSetupModal, setShowSetupModal] = useState(false);
+  const [nomeSistema, setNomeSistema] = useState("InovaApps CS");
   const [atualizadoEm, setAtualizadoEm] = useState("");
   const [modalAtendimento, setModalAtendimento] = useState<{ aberto: boolean; clienteId: string }>({
     aberto: false,
@@ -104,11 +106,15 @@ function Dashboard() {
     }
   }, [inicial]);
 
-  // Ação principal: POST /analyze_excel -> /analyze_db -> base mockada.
+  // Ação principal: POST /analyze_excel com as regras do Setup
   const gerarFila = useMutation({
-    mutationFn: () => analyzeExcel(),
-    onSuccess: (r) => {
+    mutationFn: (formData: FormData) => analyzeExcel(formData),
+    onSuccess: (r, variables) => {
       setDados(r);
+      const name = variables.get("system_name") as string;
+      if (name) setNomeSistema(name);
+      
+      setShowSetupModal(false);
       setAtualizadoEm(new Date().toLocaleString("pt-BR"));
       if (r.origem === "api") {
         toast.success("Fila de priorização gerada!", {
@@ -161,7 +167,7 @@ function Dashboard() {
               </div>
               <div>
                 <h1 className="font-display text-2xl font-bold sm:text-3xl">
-                  Globalsys CS Pulse
+                  {nomeSistema}
                   <span className="block text-base font-medium text-muted-foreground sm:inline sm:text-2xl">
                     {" "}
                     — Preservação de Receita B2B
@@ -176,16 +182,16 @@ function Dashboard() {
             <div className="flex flex-wrap items-center gap-3">
               <Button
                 size="lg"
-                onClick={() => gerarFila.mutate()}
+                onClick={() => setShowSetupModal(true)}
                 disabled={gerarFila.isPending}
                 className="cta-glow h-14 px-7 text-base font-bold text-primary-foreground hover:scale-[1.02] active:scale-[0.99]"
               >
-                ⚡ Gerar Fila de Priorização IA
+                ⚡ Nova Análise Inteligente
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => gerarFila.mutate()}
+                onClick={() => setShowSetupModal(true)}
                 disabled={gerarFila.isPending}
                 className="backdrop-blur-sm"
               >
@@ -220,9 +226,6 @@ function Dashboard() {
             </TabsTrigger>
             <TabsTrigger value="pulse">
               <Radio className="mr-2 h-4 w-4" /> Pulse Checks
-            </TabsTrigger>
-            <TabsTrigger value="ideias">
-              <Lightbulb className="mr-2 h-4 w-4" /> Canal de Ideias
             </TabsTrigger>
           </TabsList>
 
@@ -269,13 +272,15 @@ function Dashboard() {
           <TabsContent value="pulse" className="mt-6">
             <PulseChecks />
           </TabsContent>
-
-          <TabsContent value="ideias" className="mt-6">
-            <IdeasChannel />
-          </TabsContent>
         </Tabs>
       </main>
 
+      <InitialSetupModal 
+        open={showSetupModal} 
+        onOpenChange={setShowSetupModal} 
+        onSubmit={async (formData) => { await gerarFila.mutateAsync(formData); }} 
+        isSubmitting={gerarFila.isPending} 
+      />
       <ClientDetailModal cliente={selecionado} open={aberto} onOpenChange={setAberto} />
       <RegistrarAtendimentoModal
         open={modalAtendimento.aberto}

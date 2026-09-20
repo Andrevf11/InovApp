@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -21,14 +21,19 @@ def read_root():
     return {"status": "ok", "message": "API do InovaApps 2026 (Hackathon) está rodando."}
 
 @app.post("/analyze_excel")
-async def analyze_excel(file: UploadFile = File(...)):
-    """Rota REST: Recebe o arquivo Excel via Upload, processa dinamicamente e retorna a fila em JSON."""
+async def analyze_excel(
+    file: UploadFile = File(...),
+    system_name: str = Form(""),
+    criteria: str = Form(""),
+    priorities: str = Form("")
+):
+    """Rota REST: Recebe o arquivo Excel via Upload e os parâmetros de Setup para treinar a IA."""
     try:
         # Lê o arquivo recebido na requisição em memória
         conteudo = await file.read()
         
         analyzer = ChurnAnalyzer()
-        fila = analyzer.processar_ativos(conteudo)
+        fila = analyzer.processar_ativos(conteudo, system_name, criteria, priorities)
         
         # O Total é dinâmico agora
         total_ativos = len(fila)

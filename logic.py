@@ -15,7 +15,7 @@ class ChurnAnalyzer:
         # Apenas para manter compatibilidade caso o main chame. Não é mais estritamente necessário.
         pass
 
-    def processar_ativos(self, file_bytes):
+    def processar_ativos(self, file_bytes, system_name="", criteria="", priorities=""):
         """Usa o Gemini para ler os dados do Excel em memória e gerar a fila de risco 100% via IA."""
         import io
         print("Carregando dados da planilha Excel enviada pelo usuário...")
@@ -57,15 +57,21 @@ class ChurnAnalyzer:
             contexto_texto += f"  - Respondeu NPS (3m): {nps_resp}\n"
             contexto_texto += f"  - Notas NPS (3m): {nps_notas}\n\n"
 
+        nome_bot = system_name if system_name else "Sistema de CS"
+        criterios_extras = f"CRITÉRIOS DE RISCO PERSONALIZADOS (PRIORIZE ESTES):\n{criteria}\n" if criteria else "1. Queda de uso da plataforma ao longo dos 3 meses\n2. Queda de SLAs ou alto número de chamados críticos\n3. Ausência de resposta no NPS (Silêncio Qualificado) ou notas baixas (detratores)"
+        prioridades_extras = f"DIRETRIZES DE PRIORIDADE DA EMPRESA:\n{priorities}\n" if priorities else "Priorize contas grandes e VIPs/Avançados com maior urgência multiplicando o risco pelo impacto financeiro"
+
         prompt = f"""
-        Você é um analista Sênior de Customer Success e Inteligência Artificial.
+        Você é a Inteligência Artificial central do '{nome_bot}'.
+        Você atua como um analista Sênior de Customer Success.
         Abaixo estão os dados reais extraídos do nosso banco de dados (planilha) para os clientes B2B.
         
-        Sua tarefa é analisar rigorosamente os dados e identificar os 10 clientes com o MAIOR risco de churn (cancelamento).
+        Sua tarefa é analisar rigorosamente os dados e identificar os clientes com risco de churn (cancelamento).
+        
         Considere como risco:
-        1. Queda de uso da plataforma ao longo dos 3 meses
-        2. Queda de SLAs ou alto número de chamados críticos
-        3. Ausência de resposta no NPS (Silêncio Qualificado) ou notas baixas (detratores)
+        {criterios_extras}
+        
+        {prioridades_extras}
         
         Retorne um JSON estrito contendo uma lista (Array) de objetos. 
         Cada objeto deve representar um cliente, com os exatos campos:
@@ -74,7 +80,7 @@ class ChurnAnalyzer:
         - "plano": (string)
         - "valor_mensal": (number)
         - "score_risco": (number de 0 a 100 indicando a probabilidade de churn gerada pela sua análise)
-        - "urgencia_fila": (number, priorize contas grandes e VIPs/Avançados com maior urgência multiplicando o risco pelo impacto financeiro)
+        - "urgencia_fila": (number, use as diretrizes de prioridade fornecidas acima para rankear do maior para o menor)
         - "evidencias": (string, um resumo analítico de por que você concluiu que há risco)
         - "palavras_chave": (string, 3 palavras separadas por vírgula que resumem os sintomas. ex: 'Uso baixo, NPS nulo, Críticos')
         - "acao_recomendada": (string, ação prescritiva. Adicione a tag [VIP Humanizado] no início se for cliente Grande/Avançado)
@@ -126,5 +132,5 @@ if __name__ == "__main__":
     with open('base_hackathon.xlsx', 'rb') as f:
         file_bytes = f.read()
     analyzer = ChurnAnalyzer()
-    fila = analyzer.processar_ativos(file_bytes)
+    fila = analyzer.processar_ativos(file_bytes, "InovaApps", "Tickets sem resposta = risco máximo", "Sempre priorize contas pequenas primeiro")
     print(f"Processados {len(fila)} clientes com sucesso!")

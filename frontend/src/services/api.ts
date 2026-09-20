@@ -93,13 +93,22 @@ function sortFila(clientes: ClienteAtivo[]): ClienteAtivo[] {
 }
 
 /** Executa o POST no endpoint informado e normaliza a resposta. */
-async function postAnalyze(endpoint: string, timeoutMs: number, signal?: AbortSignal): Promise<AnaliseCarteira> {
+async function postAnalyze(endpoint: string, timeoutMs: number, signal?: AbortSignal, formData?: FormData): Promise<AnaliseCarteira> {
   const timeout = AbortSignal.timeout(timeoutMs);
-  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+  
+  const reqInit: RequestInit = {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-  });
+  };
+
+  if (formData) {
+    reqInit.body = formData;
+    // Omit Content-Type so browser sets boundary automatically
+  } else {
+    reqInit.headers = { "Content-Type": "application/json" };
+  }
+
+  const res = await fetch(`${API_BASE_URL}${endpoint}`, reqInit);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = (await res.json()) as AnalyzeDbResponse;
   if (json.status !== "success") throw new Error(json.message ?? "Falha na análise");
@@ -108,7 +117,7 @@ async function postAnalyze(endpoint: string, timeoutMs: number, signal?: AbortSi
     clientes: sortFila(json.data.map(mapFilaItem)),
     summary: json.summary,
     origem: "api",
-    detalheOrigem: endpoint === "/analyze_excel" ? "IA + Excel (Gemini)" : "SQL Server",
+    detalheOrigem: endpoint === "/analyze_excel" ? "IA Dinâmica" : "SQL Server",
   };
 }
 
@@ -123,20 +132,18 @@ const baseMockada = (): AnaliseCarteira => ({
 });
 
 /**
- * Gera a fila priorizada: /analyze_excel (IA) com fallback para /analyze_db
- * e, por fim, para a base mockada — a tela nunca quebra.
+ * Gera a fila priorizada: /analyze_excel (IA) com fallback local.
  */
 export async function analyzeExcel(
+  formData?: FormData,
   signal?: AbortSignal,
 ): Promise<AnaliseCarteira> {
   try {
-    return await postAnalyze("/analyze_excel", 12_000, signal);
-  } catch {
-    try {
-      return await postAnalyze("/analyze_db", 4_000, signal);
-    } catch {
-      return baseMockada();
-    }
+    // 30s timeout since AI can take time to process large files
+    return await postAnalyze("/analyze_excel", 30_000, signal, formData);
+  } catch (err) {
+    console.error("API error:", err);
+    return baseMockada();
   }
 }
 
