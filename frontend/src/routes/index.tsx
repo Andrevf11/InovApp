@@ -16,8 +16,10 @@ import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { KpiCards } from "@/components/cs/KpiCards";
-import { QueueTable } from "@/components/cs/QueueTable";
-import { ClientDetailModal } from "@/components/cs/ClientDetailModal";
+import { MainRankingTable } from "@/components/cs/MainRankingTable";
+import { AiProcessingLoader } from "@/components/cs/AiProcessingLoader";
+import { IndividualClientDrawer } from "@/components/cs/IndividualClientDrawer";
+import { RiskBySizeChart } from "@/components/cs/RiskBySizeChart";
 import { PulseChecks } from "@/components/cs/PulseChecks";
 import { SilencioQualificado } from "@/components/cs/SilencioQualificado";
 import { CrescimentoRelacionamento } from "@/components/cs/CrescimentoRelacionamento";
@@ -27,8 +29,7 @@ import {
   RegistrarAtendimentoModal,
   type Atendimento,
 } from "@/components/cs/AtendimentosSection";
-import { analyzeDb, analyzeExcel, type AnaliseCarteira } from "@/services/api";
-import { clientesMock } from "@/data/mock";
+import { baseVazia, analyzeExcel, type AnaliseCarteira } from "@/services/api";
 import type { ClienteAtivo } from "@/types/inova";
 
 export const Route = createFileRoute("/")({
@@ -53,15 +54,8 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-const baseInicial: AnaliseCarteira = {
-  clientes: clientesMock,
-  summary: { total_ativos: 58, risco_alto: clientesMock.filter((c) => c.score_risco > 60).length },
-  origem: "mock",
-  detalheOrigem: "Base local da última análise",
-};
-
 function Dashboard() {
-  const [dados, setDados] = useState<AnaliseCarteira>(baseInicial);
+  const [dados, setDados] = useState<AnaliseCarteira>(baseVazia());
   const [selecionado, setSelecionado] = useState<ClienteAtivo | null>(null);
   const [aberto, setAberto] = useState(false);
   const [showSetupModal, setShowSetupModal] = useState(false);
@@ -92,19 +86,7 @@ function Dashboard() {
     },
   ]);
 
-  // Carga inicial silenciosa (fallback mock já garante dados na tela).
-  const { data: inicial } = useQuery({
-    queryKey: ["analyze_db"],
-    queryFn: ({ signal }) => analyzeDb(signal),
-    staleTime: 60_000,
-  });
-
-  useEffect(() => {
-    if (inicial) {
-      setDados(inicial);
-      setAtualizadoEm(new Date().toLocaleString("pt-BR"));
-    }
-  }, [inicial]);
+  // O backend deve retornar a fila ao processar a planilha. Não usaremos fallback silêncioso para manter o empty state real.
 
   // Ação principal: POST /analyze_excel com as regras do Setup
   const gerarFila = useMutation({
@@ -127,9 +109,9 @@ function Dashboard() {
         });
       }
     },
-    onError: () => {
+    onError: (err) => {
       toast.error("Não foi possível concluir a análise", {
-        description: "A base local mockada permanece carregada — nenhuma informação foi perdida.",
+        description: err instanceof Error ? err.message : "Verifique se a API está rodando e tente novamente.",
       });
     },
   });
@@ -137,28 +119,14 @@ function Dashboard() {
   const clientes = dados.clientes;
 
   return (
-    <div className="aurora-bg min-h-screen">
+    <div className="min-h-screen bg-zinc-950 text-slate-50 selection:bg-indigo-500/30">
       {/* Overlay premium de processamento da IA */}
-      {gerarFila.isPending && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md">
-          <div className="glass-panel flex max-w-md flex-col items-center gap-6 px-10 py-12 text-center">
-            <div className="relative flex h-20 w-20 items-center justify-center">
-              <span className="absolute inset-0 animate-ping rounded-full bg-primary/20" />
-              <span className="absolute inset-2 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
-              <BrainCircuit className="relative h-8 w-8 text-primary text-glow-primary" />
-            </div>
-            <div>
-              <p className="font-display text-lg font-semibold">A IA está cruzando NPS, Atendimentos e Padrões de Risco...</p>
-              <p className="mt-2 text-sm text-muted-foreground">Por favor aguarde. Isso pode levar até 10 segundos.</p>
-            </div>
-            <div className="h-1 w-56 overflow-hidden rounded-full bg-muted">
-              <div className="cta-glow h-full w-1/2 animate-[pulse_1.2s_ease-in-out_infinite] rounded-full" />
-            </div>
-          </div>
-        </div>
-      )}
+      <AiProcessingLoader
+        open={gerarFila.isPending}
+        mensagem="Processando cruzamento de dados e padrões de risco..."
+      />
 
-      <header className="grid-industrial border-b border-glass-border">
+      <header className="border-b border-white/5 bg-zinc-950/50 backdrop-blur-md sticky top-0 z-10">
         <div className="mx-auto max-w-[1500px] px-6 py-8">
           <div className="flex flex-wrap items-start justify-between gap-6">
             <div className="flex items-start gap-4">
@@ -166,16 +134,13 @@ function Dashboard() {
                 <Activity className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <h1 className="font-display text-2xl font-bold sm:text-3xl">
+                <h1 className="font-display text-2xl font-bold tracking-tight text-white sm:text-3xl">
                   {nomeSistema}
-                  <span className="block text-base font-medium text-muted-foreground sm:inline sm:text-2xl">
+                  <span className="block text-base font-medium text-zinc-400 sm:inline sm:text-2xl">
                     {" "}
-                    — Preservação de Receita B2B
+                    — Analytics & Risco B2B
                   </span>
                 </h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Motor de Análise Preditiva e Diagnóstico Prescritivo de Churn · InovaApps 2026
-                </p>
               </div>
             </div>
 
@@ -184,9 +149,9 @@ function Dashboard() {
                 size="lg"
                 onClick={() => setShowSetupModal(true)}
                 disabled={gerarFila.isPending}
-                className="cta-glow h-14 px-7 text-base font-bold text-primary-foreground hover:scale-[1.02] active:scale-[0.99]"
+                className="h-11 px-6 text-sm font-semibold bg-indigo-600 hover:bg-indigo-500 text-white rounded-md shadow-sm transition-all"
               >
-                ⚡ Nova Análise Inteligente
+                Nova Análise
               </Button>
               <Button
                 variant="outline"
@@ -201,78 +166,100 @@ function Dashboard() {
           </div>
 
           <div className="mt-8">
-            <KpiCards
-              totalAtivos={dados.summary.total_ativos}
-              riscoAlto={dados.summary.risco_alto}
-            />
+            {clientes.length > 0 && (
+              <KpiCards
+                totalAtivos={dados.summary.total_ativos}
+                riscoAlto={dados.summary.risco_alto}
+              />
+            )}
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-[1500px] px-6 py-8">
-        <Tabs defaultValue="fila">
-          <TabsList className="flex-wrap backdrop-blur-sm">
-            <TabsTrigger value="fila">
-              <ListOrdered className="mr-2 h-4 w-4" /> Fila Prioritária
-            </TabsTrigger>
-            <TabsTrigger value="atendimentos">
-              <CalendarCheck className="mr-2 h-4 w-4" /> Atendimentos
-            </TabsTrigger>
-            <TabsTrigger value="silencio">
-              <Ghost className="mr-2 h-4 w-4" /> Silêncio Qualificado
-            </TabsTrigger>
-            <TabsTrigger value="crescimento">
-              <HeartHandshake className="mr-2 h-4 w-4" /> Crescimento &amp; Relacionamento
-            </TabsTrigger>
-            <TabsTrigger value="pulse">
-              <Radio className="mr-2 h-4 w-4" /> Pulse Checks
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="fila" className="mt-6">
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h2 className="font-display text-xl font-semibold">Fila de Atendimento Priorizada</h2>
-                <p className="text-sm text-muted-foreground">
-                  Ordenação rigorosa por impacto financeiro (Score de Risco × MRR). Última análise: {atualizadoEm || "—"}
-                </p>
+          {clientes.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-32 text-center">
+              <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-zinc-900 border border-zinc-800 shadow-sm">
+                <Activity className="h-8 w-8 text-indigo-400" />
               </div>
-              <p className="text-xs text-muted-foreground">
-                {clientes.length} contas na fila · {dados.summary.total_ativos} ativos analisados ·{" "}
-                {dados.origem === "api" ? `Dados do motor (${dados.detalheOrigem})` : dados.detalheOrigem}
+              <h2 className="font-display text-2xl font-semibold tracking-tight text-white">Nenhuma base analisada</h2>
+              <p className="mt-2 max-w-md text-sm text-zinc-400">
+                Inicie uma nova análise enviando a planilha de clientes para gerar o diagnóstico de risco.
               </p>
+              <Button
+                size="lg"
+                onClick={() => setShowSetupModal(true)}
+                className="mt-8 h-12 px-8 text-base font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-md shadow-sm transition-all"
+              >
+                Iniciar Análise
+              </Button>
             </div>
+          ) : (
+            <div className="space-y-8">
+              <RiskBySizeChart clientes={clientes} />
+              <Tabs defaultValue="fila">
+                <TabsList className="flex-wrap backdrop-blur-sm">
+                <TabsTrigger value="fila">
+                  <ListOrdered className="mr-2 h-4 w-4" /> Fila Prioritária
+                </TabsTrigger>
+                <TabsTrigger value="atendimentos">
+                  <CalendarCheck className="mr-2 h-4 w-4" /> Atendimentos
+                </TabsTrigger>
+                <TabsTrigger value="silencio">
+                  <Ghost className="mr-2 h-4 w-4" /> Silêncio Qualificado
+                </TabsTrigger>
+                <TabsTrigger value="crescimento">
+                  <HeartHandshake className="mr-2 h-4 w-4" /> Crescimento &amp; Relacionamento
+                </TabsTrigger>
+                <TabsTrigger value="pulse">
+                  <Radio className="mr-2 h-4 w-4" /> Pulse Checks
+                </TabsTrigger>
+              </TabsList>
 
-            <QueueTable
-              clientes={clientes}
-              onOpen={(c) => {
-                setSelecionado(c);
-                setAberto(true);
-              }}
-              onRegistrarAcao={(c) => setModalAtendimento({ aberto: true, clienteId: c.cliente_id })}
-            />
-          </TabsContent>
+              <TabsContent value="fila" className="mt-6">
+                <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h2 className="font-display text-xl font-semibold">Fila de Atendimento Priorizada</h2>
+                    <p className="text-sm text-muted-foreground">
+                      Ordenação rigorosa por impacto financeiro (Score de Risco × MRR). Última análise: {atualizadoEm || "—"}
+                    </p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {clientes.length} contas na fila · {dados.summary.total_ativos} ativos analisados ·{" "}
+                    {dados.origem === "api" ? `Dados do motor (${dados.detalheOrigem})` : dados.detalheOrigem}
+                  </p>
+                </div>
 
-          <TabsContent value="atendimentos" className="mt-6">
-            <AtendimentosSection
-              atendimentos={atendimentos}
-              onNovo={() => setModalAtendimento({ aberto: true, clienteId: "" })}
-            />
-          </TabsContent>
+                <MainRankingTable
+                  clientes={clientes}
+                  onOpenIndividual={(c) => {
+                    setSelecionado(c);
+                    setAberto(true);
+                  }}
+                />
+              </TabsContent>
 
-          <TabsContent value="silencio" className="mt-6">
-            <SilencioQualificado />
-          </TabsContent>
+              <TabsContent value="atendimentos" className="mt-6">
+                <AtendimentosSection
+                  atendimentos={atendimentos}
+                  onNovo={() => setModalAtendimento({ aberto: true, clienteId: "" })}
+                />
+              </TabsContent>
 
+              <TabsContent value="silencio" className="mt-6">
+                <SilencioQualificado />
+              </TabsContent>
 
-          <TabsContent value="crescimento" className="mt-6">
-            <CrescimentoRelacionamento />
-          </TabsContent>
+              <TabsContent value="crescimento" className="mt-6">
+                <CrescimentoRelacionamento />
+              </TabsContent>
 
-          <TabsContent value="pulse" className="mt-6">
-            <PulseChecks />
-          </TabsContent>
-        </Tabs>
+              <TabsContent value="pulse" className="mt-6">
+                <PulseChecks />
+              </TabsContent>
+            </Tabs>
+            </div>
+          )}
       </main>
 
       <InitialSetupModal 
@@ -281,7 +268,14 @@ function Dashboard() {
         onSubmit={async (formData) => { await gerarFila.mutateAsync(formData); }} 
         isSubmitting={gerarFila.isPending} 
       />
-      <ClientDetailModal cliente={selecionado} open={aberto} onOpenChange={setAberto} />
+      <IndividualClientDrawer
+        cliente={selecionado}
+        open={aberto}
+        onOpenChange={setAberto}
+        onRegistrarAtendimento={(c) =>
+          setModalAtendimento({ aberto: true, clienteId: c.cliente_id })
+        }
+      />
       <RegistrarAtendimentoModal
         open={modalAtendimento.aberto}
         onOpenChange={(v) => setModalAtendimento((s) => ({ ...s, aberto: v }))}

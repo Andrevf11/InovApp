@@ -44,7 +44,7 @@ export function mapFilaItem(item: FilaItemAPI): ClienteAtivo {
   };
 
   const bruto = item.plano ?? "";
-  const porte = derivarPorte(bruto);
+  const porte = derivarPorte(item.porte ?? "");
   const planoExibicao = derivarPlano(bruto);
 
   // Atendimentos NÃO podem ultrapassar o tempo máximo (contrato do plano − margem de erro 2h).
@@ -76,7 +76,7 @@ export function mapFilaItem(item: FilaItemAPI): ClienteAtivo {
         : "Respondente",
     acao_prescritiva:
       acoesVipPorCliente[item.cliente_id] ?? item.acao_recomendada,
-    ...(item.palavras_chave ? { palavras_chave: item.palavras_chave } : {}),
+    ...(item.palavras_chave ? { palavras_chave: typeof item.palavras_chave === "string" ? item.palavras_chave.split(",").map(s => s.trim()) : item.palavras_chave } : {}),
     evidencias: ev ? ev.split(" | ") : [],
   };
 }
@@ -131,20 +131,22 @@ const baseMockada = (): AnaliseCarteira => ({
   detalheOrigem: "Base local da última análise",
 });
 
+export const baseVazia = (): AnaliseCarteira => ({
+  clientes: [],
+  summary: { total_ativos: 0, risco_alto: 0 },
+  origem: "mock",
+  detalheOrigem: "Aguardando importação",
+});
+
 /**
- * Gera a fila priorizada: /analyze_excel (IA) com fallback local.
+ * Gera a fila priorizada: /analyze_excel (IA). Sem mock de fallback em caso de erro para forçar o blank state.
  */
 export async function analyzeExcel(
   formData?: FormData,
   signal?: AbortSignal,
 ): Promise<AnaliseCarteira> {
-  try {
-    // 30s timeout since AI can take time to process large files
-    return await postAnalyze("/analyze_excel", 30_000, signal, formData);
-  } catch (err) {
-    console.error("API error:", err);
-    return baseMockada();
-  }
+  // 30s timeout since AI can take time to process large files
+  return await postAnalyze("/analyze_excel", 30_000, signal, formData);
 }
 
 /** Compatibilidade: análise direta no SQL Server (usada pela query inicial). */

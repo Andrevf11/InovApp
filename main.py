@@ -1,5 +1,6 @@
 import os
 from fastapi import FastAPI, File, UploadFile, Form
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -16,9 +17,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class AcaoReq(BaseModel):
+    cliente_id: str
+    acao: str
+    registrado_em: str
+
+class PostMortemReq(BaseModel):
+    cliente_id: str
+    tipo: str
+    motivo_real: str
+    detalhe: str
+    registrado_em: str
+
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "API do InovaApps 2026 (Hackathon) está rodando."}
+
+@app.post("/analyze_db")
+async def analyze_db_fallback():
+    """Rota de retrocompatibilidade para o primeiro carregamento silencioso do frontend. Força o fallback local no navegador."""
+    return JSONResponse(content={"status": "error", "message": "Banco de dados desativado por segurança. Frontend usará os Mocks padrão."}, status_code=400)
+
+@app.post("/acoes")
+async def registrar_acao(req: AcaoReq):
+    """Finge salvar a ação no banco, mas grava em arquivo texto (auditoria.log)"""
+    with open("auditoria.log", "a", encoding="utf-8") as f:
+        f.write(f"[{req.registrado_em}] ACAO - Cliente: {req.cliente_id} - Acao: {req.acao}\n")
+    return {"status": "success", "message": "Ação registrada com sucesso no log de auditoria."}
+
+@app.post("/post_mortem")
+async def registrar_post_mortem(req: PostMortemReq):
+    """Finge salvar o post-mortem no banco, mas grava em arquivo texto (auditoria.log)"""
+    with open("auditoria.log", "a", encoding="utf-8") as f:
+        f.write(f"[{req.registrado_em}] POST_MORTEM ({req.tipo}) - Cliente: {req.cliente_id} - Motivo: {req.motivo_real} - Detalhe: {req.detalhe}\n")
+    return {"status": "success", "message": "Post-Mortem registrado com sucesso."}
 
 @app.post("/analyze_excel")
 async def analyze_excel(

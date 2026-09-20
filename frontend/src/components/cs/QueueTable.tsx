@@ -203,7 +203,7 @@ export function QueueTable({
               {/* Palavras-chave IA */}
               <div className="min-w-48 flex-1">
                 <div className="flex flex-wrap gap-1.5">
-                  {(c.palavras_chave ?? []).map((k, idx) => (
+                  {(Array.isArray(c.palavras_chave) ? c.palavras_chave : typeof c.palavras_chave === 'string' ? (c.palavras_chave as string).split(',').map(s => s.trim()) : []).map((k, idx) => (
                     <span
                       key={k}
                       className={cn(
